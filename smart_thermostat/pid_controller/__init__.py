@@ -185,8 +185,13 @@ class PIDAutotune(object):
         """
         divisors = self._tuning_rules[tuning_rule]
         kp = self._Ku / divisors[0]
-        ki = kp / (self._Pu / divisors[1])
-        kd = kp * (self._Pu / divisors[2])
+        if self._Pu == 0:
+            ki = 0
+            kd = 0
+        else:
+            ki = kp / (self._Pu / divisors[1])
+            kd = kp * (self._Pu / divisors[2])
+            
         return PIDAutotune.PIDParams(kp, ki, kd)
 
     def run(self, input_val):
