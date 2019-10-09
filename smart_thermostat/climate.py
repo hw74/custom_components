@@ -338,7 +338,7 @@ class SmartThermostat(ClimateDevice, RestoreEntity):
         elif hvac_mode == HVAC_MODE_OFF:
             self._hvac_mode = HVAC_MODE_OFF
             if self._is_device_active:
-                await self._async_async_heater_turn_off()
+                await self._async_heater_turn_off()
         else:
             _LOGGER.error("Unrecognized hvac mode: %s", hvac_mode)
             return
@@ -477,8 +477,12 @@ class SmartThermostat(ClimateDevice, RestoreEntity):
 
     async def calc_output(self):
         """calculate control output and handle autotune"""
+        old_output = 0
+        if hasattr(self, 'control_output'):
+            old_output = self.control_output
+        
         if self.autotune != "none" :
-            if self.pidAutotune.run(self._cur_temp):
+            if self.pidAutotune.run(self._cur_temp) and self.pidAutotune.state == pid_controller.PIDAutotune.STATE_SUCCEEDED:
                 params = self.pidAutotune.get_pid_parameters(self.autotune)
                 self.kp = params.Kp
                 self.ki = params.Ki
@@ -486,6 +490,7 @@ class SmartThermostat(ClimateDevice, RestoreEntity):
                 _LOGGER.info("Set Kd, Ki, Kd. "
                              "Smart thermostat now runs on PID Controller. %s,  %s,  %s",
                              self.kp , self.ki, self.kd)
+                await self.hass.services.async_call("persistent_notification", "create", { "title": "PID Controller " + self.name, "message": "PIDAutotune finished: P: " + str(self.kp) + ", I: " + str(self.ki) + ", D: " + str(self.kd) })
                 self.pidController = pid_controller.PIDArduino(self._keep_alive.seconds, self.kp, self.ki,
                 self.kd, self.minOut, self.maxOut, time.time)
                 self.autotune = "none"
@@ -493,7 +498,8 @@ class SmartThermostat(ClimateDevice, RestoreEntity):
         else:
             self.control_output = self.pidController.calc(self._cur_temp,
             self._target_temp)
-        _LOGGER.info("Obtained current control output. %s", self.control_output)
+        if self.control_output != old_output:
+            _LOGGER.info("Obtained new control output: %s", self.control_output)
         await self.set_controlvalue();
 
     async def set_controlvalue(self):
