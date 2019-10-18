@@ -33,6 +33,7 @@ class PIDArduino(object):
             raise ValueError('out_min must be less than out_max')
 
         self._logger = logging.getLogger(type(self).__name__)
+
         self._Kp = kp
         self._Ki = ki * sampletime
         self._Kd = kd / sampletime
@@ -127,7 +128,7 @@ class PIDAutotune(object):
         "brewing": [2.5, 6, 380]
     }
 
-    def __init__(self, setpoint, out_step=10, sampletime=5, lookback=60,
+    def __init__(self, setpoint, logger, out_step=10, sampletime=5, lookback=60,
                  out_min=float('-inf'), out_max=float('inf'), noiseband=0.5, time=time):
         if setpoint is None:
             raise ValueError('setpoint must be specified')
@@ -141,8 +142,10 @@ class PIDAutotune(object):
             raise ValueError('out_min must be less than out_max')
 
         self._time = time
-        self._logger = logging.getLogger(type(self).__name__)
+        self._logger = logger # logging.getLogger(type(self).__name__)
+        self._logger.debug('Init PIDAutotune')
         self._inputs = deque(maxlen=round(lookback / sampletime))
+        self._logger.debug('inputs length: {0}'.format(self._inputs.maxlen))
         self._sampletime = sampletime * 1000
         self._setpoint = setpoint
         self._outputstep = out_step
@@ -246,6 +249,9 @@ class PIDAutotune(object):
 
         self._inputs.append(input_val)
 
+        if is_max and is_min:
+            return False
+
         # we don't want to trust the maxes or mins until the input array is full
         if len(self._inputs) < self._inputs.maxlen:
             return False
@@ -256,6 +262,7 @@ class PIDAutotune(object):
         # peak types:
         # -1: minimum
         # +1: maximum
+
         if is_max:
             if self._peak_type == -1:
                 inflection = True
@@ -266,11 +273,19 @@ class PIDAutotune(object):
             self._peak_type = -1
 
         # update peak times and values
+        peak_value = 0
+        
         if inflection:
+            self._logger.debug('inflection inputs: {0}'.format(self._inputs))
+            if self._inputs.maxlen > 1:
+                peak_value = self._inputs[-2]
+            else:
+                peak_value = input_val
+
             self._peak_count += 1
-            self._peaks.append(input_val)
+            self._peaks.append(peak_value)
             self._peak_timestamps.append(now)
-            self._logger.debug('found peak: {0}'.format(input_val))
+            self._logger.debug('found peak: {0}'.format(peak_value))
             self._logger.debug('peak count: {0}'.format(self._peak_count))
 
         # check for convergence of induced oscillation
